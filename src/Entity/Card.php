@@ -18,7 +18,7 @@ class Card
     private $id;
 
     /**
-     * @ORM\Column(type="string", length=255)
+     * @ORM\Column(type="string", length=255, unique=true)
      */
     private $name;
 
@@ -32,13 +32,11 @@ class Card
      */
     private $size;
 
-    public function __construct(SplFileInfo $file = null)
+    public function updateImageData(SplFileInfo $file)
     {
-        if (null !== $file) {
-            $this->setName($file->getFilename());
-            $this->setImageData($file->getContents());
-            $this->setSize($file->getSize());
-        }
+        $this->setName($file->getFilename());
+        $this->setImageData($file->getContents());
+        $this->setSize($file->getSize());
     }
 
     public function getId(): ?int
@@ -60,7 +58,11 @@ class Card
 
     public function getImageData(): ?string
     {
-        return $this->imageData;
+        if (null !== $this->imageData) {
+            return stream_get_contents($this->imageData);
+        }
+
+        return null;
     }
 
     public function setImageData(string $imageData): self
