@@ -5,6 +5,9 @@ namespace App\Service;
 use App\Entity\Card;
 use Doctrine\ORM\EntityManagerInterface;
 use GuzzleHttp\Client as GuzzleClient;
+use Psr\Log\LoggerInterface;
+use Symfony\Component\Console\Helper\ProgressBar;
+use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\Finder\Finder;
 use ZipArchive;
@@ -22,19 +25,34 @@ class CardSync
 
     protected $importPath;
 
-    public function __construct(EntityManagerInterface $em)
+    protected $output;
+
+    public function __construct(EntityManagerInterface $em, LoggerInterface $log)
     {
         $this->em = $em;
+        $this->log = $log;
 
         $this->cacheDir = realpath(__DIR__. '/../../var/cache');
         $this->downloadZip = "{$this->cacheDir}/hearthstone-card-images.zip";
         $this->importPath = "{$this->cacheDir}/card-import";
     }
 
+    public function setOutput(OutputInterface $output)
+    {
+        $this->output = $output;
+
+        return $this;
+    }
+
     public function sync()
     {
+        $this->log->info('Downloading cards from github.com/schmich/hearthstone-card-images');
         $this->downloadCardImages();
+
+        $this->log->info('Extracting images');
         $this->extractImages();
+
+        $this->log->info('Importing images');
         $this->import();
     }
 
@@ -77,16 +95,26 @@ class CardSync
 
         $repo = $this->em->getRepository(Card::class);
 
+        $progressBar = new ProgressBar($this->output, count($cardImages));
+        $progressBar->setFormat('%current%/%max% %bar% (%memory%) %message%');
+
         foreach ($cardImages as $cardImage) {
-            $card = $repo->findOneBy(['name' => $cardImage->getFileName()]);
+            $name = $cardImage->getFileName();
+            $progressBar->setMessage($name);
+
+            $card = $repo->findOneBy(['name' => $name]);
             if (null === $card) {
                 $card = new Card($cardImage);
             }
 
             $card->updateImageData($cardImage);
             $this->em->persist($card);
+            $progressBar->advance();
         }
 
+        $progressBar->finish();
+        $this->log->info('');
+        $this->log->info('Flushing database changes ...');
         $this->em->flush();
 
         return true;
